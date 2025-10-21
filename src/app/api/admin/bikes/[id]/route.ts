@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient } from "@/lib/supabaseServerClient";
 import { verifyAdminToken } from "@/lib/verifyAdminToken";
 
+// Define the type for the object used to update the database
+// We use 'unknown' for values to allow for strings, numbers, or boolean (though only string/number are used here)
+type BikeUpdate = {
+  [key: string]: string | number | boolean;
+};
+
+// 🌟 FIX 1: Define a stricter type for the error catch block
+interface CustomError extends Error {
+  message: string;
+}
+
+// ======================================================================
+// PATCH Handler: Update Bike Details or Availability
+// ======================================================================
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const token = req.headers.get("authorization")?.split(" ")[1];
   const admin = await verifyAdminToken(token);
@@ -9,12 +23,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
   try {
-    const { id } = await params; // ✅ Fix like you did (await params)
+    const { id } = await params;
     const contentType = req.headers.get("content-type") || "";
 
     // JSON patch (for availability toggle)
     if (contentType.includes("application/json")) {
-      const { availability } = await req.json();
+      // TypeScript can infer the type of the JSON body here, often `{ availability: boolean }`
+      const { availability } = await req.json(); 
       const { error } = await supabaseServerClient
         .from("bikes")
         .update({ availability })
@@ -25,11 +40,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     // --- FormData patch (update details + image) ---
     const formData = await req.formData();
-    const updates: Record<string, any> = {};
+    const updates: BikeUpdate = {}; 
 
     for (const [key, value] of formData.entries()) {
       if (key === "image_file") continue;
-      updates[key] = key === "rent_per_hour" ? Number(value) : value;
+      // 'value' is of type FormDataEntryValue, which is string or File
+      // Since we check for "image_file" above, 'value' here must be a string (or blob, but inputs are usually strings)
+      updates[key] = key === "rent_per_hour" ? Number(value as string) : value as string;
     }
 
     // Get current image before changing
@@ -42,7 +59,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const image_file = formData.get("image_file") as File | null;
     if (image_file) {
-      // ✅ No "bikes/" prefix — bucket already named bikes
       const fileName = `${Date.now()}-${image_file.name}`;
       const { error: uploadError } = await supabaseServerClient.storage
         .from("bikes")
@@ -71,15 +87,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (error) throw error;
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    console.error("PATCH error:", err.message);
+  } catch (err) {
+    const error = err as CustomError; 
+    console.error("PATCH error:", error.message);
     return NextResponse.json(
-      { success: false, message: err.message || "Server error" },
+      { success: false, message: error.message || "Server error" },
       { status: 500 }
     );
   }
 }
 
+// ======================================================================
+// DELETE Handler: Delete Bike Record and Image
+// ======================================================================
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const token = req.headers.get("authorization")?.split(" ")[1];
   const admin = await verifyAdminToken(token);
@@ -87,7 +107,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
   try {
-    const { id } = await params; // ✅ same fix here
+    const { id } = await params;
 
     // Fetch image URL before deleting record
     const { data: bikeData } = await supabaseServerClient
@@ -109,10 +129,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    console.error("DELETE error:", err.message);
+  } catch (err) {
+    const error = err as CustomError; 
+    console.error("DELETE error:", error.message);
     return NextResponse.json(
-      { success: false, message: err.message || "Server error" },
+      { success: false, message: error.message || "Server error" },
       { status: 500 }
     );
   }

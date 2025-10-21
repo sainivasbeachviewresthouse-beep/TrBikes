@@ -2,20 +2,23 @@
 
 import { Card, Button, Form } from "react-bootstrap";
 
+// 💡 Best practice: Move the 'Bike' interface outside of the props for reusability.
+interface Bike {
+  id: string;
+  name: string;
+  registration_no: string;
+  category: string;
+  color: string;
+  rent_per_hour: number;
+  image_url?: string;
+  availability?: boolean;
+}
+
 interface BikeCardProps {
-  bike: {
-    id: string;
-    name: string;
-    registration_no: string;
-    category: string;
-    color: string;
-    rent_per_hour: number;
-    image_url?: string;
-    availability?: boolean; // <-- availability
-  };
-  onEdit: (bike: any) => void;
+  bike: Bike; // Using the defined Bike interface
+  onEdit: (bike: Bike) => void; 
   onDelete: (id: string) => void;
-  onToggleActive: (id: string, active: boolean) => void; // new
+  onToggleActive: (id: string, active: boolean) => void;
 }
 
 export default function BikeCard({
@@ -46,7 +49,7 @@ export default function BikeCard({
         </Card.Text>
 
         {/* Availability Toggle */}
-        <Form.Check 
+        <Form.Check
           type="switch"
           id={`toggle-${bike.id}`}
           label={bike.availability ? "Active" : "Inactive"}

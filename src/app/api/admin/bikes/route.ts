@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient } from "@/lib/supabaseServerClient";
 import { verifyAdminToken } from "@/lib/verifyAdminToken";
 
+// Define a minimal interface for errors we expect to handle
+interface CustomError extends Error {
+  message: string;
+}
+
 export async function POST(req: Request) {
   const token = req.headers.get("authorization")?.split(" ")[1];
   const admin = await verifyAdminToken(token);
@@ -14,7 +19,8 @@ export async function POST(req: Request) {
     const registration_no = formData.get("registration_no") as string;
     const category = formData.get("category") as string;
     const color = formData.get("color") as string;
-    const rent_per_hour = Number(formData.get("rent_per_hour"));
+    // FormData.get() returns FormDataEntryValue (string or File). We convert to Number.
+    const rent_per_hour = Number(formData.get("rent_per_hour")); 
     const image_file = formData.get("image_file") as File | null;
     const image_url = formData.get("image_url") as string | null;
 
@@ -45,7 +51,8 @@ export async function POST(req: Request) {
     if (error) throw error;
 
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message || "Server error" }, { status: 500 });
+  } catch (err) {
+    const error = err as CustomError; 
+    return NextResponse.json({ success: false, message: error.message || "Server error" }, { status: 500 });
   }
 }

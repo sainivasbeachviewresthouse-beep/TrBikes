@@ -20,7 +20,19 @@ export async function verifyAdminToken(token?: string): Promise<JwtPayload | nul
     if (!token) return null;
 
     const { payload } = await jose.jwtVerify(token, secret);
-    return payload as JwtPayload;
+    const p = payload as unknown as Record<string, unknown>;
+
+    if (typeof p.id === "string" && typeof p.email === "string") {
+      const result: JwtPayload = {
+        id: p.id,
+        email: p.email,
+        iat: typeof p.iat === "number" ? p.iat : undefined,
+        exp: typeof p.exp === "number" ? p.exp : undefined,
+      };
+      return result;
+    }
+
+    return null;
   } catch (err) {
     console.error("Invalid or expired token:", err);
     return null;

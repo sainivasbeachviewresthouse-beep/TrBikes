@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, ChangeEvent, FormEvent, useCallback } from "react";
 import { Container, Button, Spinner, Modal, Form, Alert } from "react-bootstrap";
 import { supabaseClient } from "@/lib/supabaseClient";
 import BikeCard from "../components/BikeCard";
 import ImageUploader from "../components/ImageUploader";
 import { useBikeStore } from "@/store/useBikeStore";
+
+// Define the shape of the form data
+interface BikeFormData {
+  name: string;
+  registration_no: string;
+  category: string;
+  color: string;
+  rent_per_hour: string; // Stored as string in form state for easy input handling
+  image_url: string;
+}
 
 interface Bike {
   id: string;
@@ -18,26 +28,39 @@ interface Bike {
   availability?: boolean;
 }
 
+// Function to reset the form state to its initial empty values
+const initialFormData: BikeFormData = {
+  name: "",
+  registration_no: "",
+  category: "",
+  color: "",
+  rent_per_hour: "",
+  image_url: "",
+};
+
 export default function AdminBikesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingBike, setEditingBike] = useState<Bike | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    registration_no: "",
-    category: "",
-    color: "",
-    rent_per_hour: "",
-    image_url: "",
-  });
+  const [formData, setFormData] = useState<BikeFormData>(initialFormData);
 
   const { bikes, setBikes, addBike, updateBike, removeBike } = useBikeStore();
+  // Safe way to get localStorage value
   const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") : "";
 
+  /** 🔹 Helper to reset modal state */
+  const resetModal = () => {
+    setShowModal(false);
+    setEditingBike(null);
+    setPendingFile(null);
+    setFormData(initialFormData);
+  };
+
   /** 🔹 Fetch all bikes initially */
-  const fetchBikes = async () => {
+  // 🌟 FIX: Wrapped in useCallback to make the function stable
+  const fetchBikes = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/bikes");
@@ -49,7 +72,7 @@ export default function AdminBikesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setBikes, setError]); // Dependencies required by ESLint
 
   /** 🔹 Subscribe to Supabase realtime updates */
   useEffect(() => {
@@ -63,7 +86,7 @@ export default function AdminBikesPage() {
         (payload) => {
           if (payload.eventType === "INSERT") addBike(payload.new as Bike);
           else if (payload.eventType === "UPDATE") updateBike(payload.new as Bike);
-          else if (payload.eventType === "DELETE") removeBike(payload.old.id);
+          else if (payload.eventType === "DELETE") removeBike(payload.old.id as string);
         }
       )
       .subscribe();
@@ -71,11 +94,13 @@ export default function AdminBikesPage() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, []);
+    // 🌟 FIX: Added all missing dependencies
+  }, [fetchBikes, addBike, updateBike, removeBike]);
 
-  /** 🔹 Form input change */
-  const handleChange = (e: React.ChangeEvent<any>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
   };
 
   /** 🔹 Handle image from ImageUploader */
@@ -93,9 +118,10 @@ export default function AdminBikesPage() {
   };
 
   /** 🔹 Add / Update Bike */
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(""); // Clear previous errors
 
     const apiFormData = new FormData();
     apiFormData.append("name", formData.name);
@@ -117,18 +143,11 @@ export default function AdminBikesPage() {
         body: apiFormData,
       });
       const data = await res.json();
-      if (!data.success) setError(data.message);
-      setShowModal(false);
-      setEditingBike(null);
-      setFormData({
-        name: "",
-        registration_no: "",
-        category: "",
-        color: "",
-        rent_per_hour: "",
-        image_url: "",
-      });
-      setPendingFile(null);
+      if (!data.success) {
+        setError(data.message);
+      } else {
+        resetModal(); // Reset on successful submission
+      }
     } catch {
       setError("Failed to save bike");
     } finally {
@@ -184,7 +203,12 @@ export default function AdminBikesPage() {
     <Container className="py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="mb-0">Manage Bikes</h2>
-        <Button onClick={() => setShowModal(true)}>Add New Bike</Button>
+        {/* Pass initial state to Add New Bike button */}
+        <Button onClick={() => {
+          setEditingBike(null); 
+          setFormData(initialFormData); 
+          setShowModal(true);
+        }}>Add New Bike</Button>
       </div>
 
       {error && <Alert variant="danger">{error}</Alert>}
@@ -213,12 +237,7 @@ export default function AdminBikesPage() {
       {/* Add/Edit Modal */}
       <Modal
         show={showModal}
-        onHide={() => {
-          setShowModal(false);
-          setEditingBike(null);
-          setPendingFile(null);
-          setFormData({ name: "", registration_no: "", category: "", color: "", rent_per_hour: "", image_url: "" });
-        }}
+        onHide={resetModal} // Use the new reset helper
         centered
       >
         <Modal.Header closeButton>
@@ -230,6 +249,7 @@ export default function AdminBikesPage() {
             <Form.Group className="mb-2"><Form.Label>Registration No</Form.Label><Form.Control name="registration_no" value={formData.registration_no} onChange={handleChange} required /></Form.Group>
             <Form.Group className="mb-2"><Form.Label>Category</Form.Label><Form.Control name="category" value={formData.category} onChange={handleChange} required /></Form.Group>
             <Form.Group className="mb-2"><Form.Label>Color</Form.Label><Form.Control name="color" value={formData.color} onChange={handleChange} /></Form.Group>
+            {/* Note: rent_per_hour is type="number" in the control but handled by handleChange */}
             <Form.Group className="mb-2"><Form.Label>Rent per Hour</Form.Label><Form.Control type="number" name="rent_per_hour" value={formData.rent_per_hour} onChange={handleChange} required /></Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Bike Image</Form.Label>

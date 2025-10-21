@@ -1,5 +1,6 @@
 'use client';
 import { Navbar, Container } from 'react-bootstrap';
+import Image from 'next/image';
 
 export default function Header() {
   return (
@@ -13,7 +14,7 @@ export default function Header() {
         {/* Right side: Admin profile */}
         <div className="d-flex align-items-center gap-3">
           <span className="fw-semibold">Tirumula Admin</span>
-          <img
+          <Image
             src="https://cdn.dotpe.in/longtail/store-logo/9434671/c1eXa4pN.webp"
             alt="Admin"
             width="35"
