@@ -1,0 +1,13 @@
+# wrangler.toml
+
+name = "TrBikes"
+main = ".open-next/worker.js"
+compatibility_date = "2025-10-21"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[observability.logs]
+enabled = true

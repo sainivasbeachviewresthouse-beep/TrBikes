@@ -1,0 +1,119 @@
+import { NextResponse } from "next/server";
+import { supabaseServerClient } from "@/lib/supabaseServerClient";
+import { verifyAdminToken } from "@/lib/verifyAdminToken";
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const token = req.headers.get("authorization")?.split(" ")[1];
+  const admin = await verifyAdminToken(token);
+  if (!admin)
+    return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+
+  try {
+    const { id } = await params; // ✅ Fix like you did (await params)
+    const contentType = req.headers.get("content-type") || "";
+
+    // JSON patch (for availability toggle)
+    if (contentType.includes("application/json")) {
+      const { availability } = await req.json();
+      const { error } = await supabaseServerClient
+        .from("bikes")
+        .update({ availability })
+        .eq("id", id);
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    // --- FormData patch (update details + image) ---
+    const formData = await req.formData();
+    const updates: Record<string, any> = {};
+
+    for (const [key, value] of formData.entries()) {
+      if (key === "image_file") continue;
+      updates[key] = key === "rent_per_hour" ? Number(value) : value;
+    }
+
+    // Get current image before changing
+    const { data: existingData, error: fetchError } = await supabaseServerClient
+      .from("bikes")
+      .select("image_url")
+      .eq("id", id)
+      .single();
+    if (fetchError) throw fetchError;
+
+    const image_file = formData.get("image_file") as File | null;
+    if (image_file) {
+      // ✅ No "bikes/" prefix — bucket already named bikes
+      const fileName = `${Date.now()}-${image_file.name}`;
+      const { error: uploadError } = await supabaseServerClient.storage
+        .from("bikes")
+        .upload(fileName, image_file, { cacheControl: "3600", upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrl } = supabaseServerClient.storage
+        .from("bikes")
+        .getPublicUrl(fileName);
+      updates.image_url = publicUrl.publicUrl;
+
+      // Delete old image if it exists
+      if (existingData?.image_url) {
+        const path = existingData.image_url.split("/storage/v1/object/public/bikes/")[1];
+        if (path) {
+          await supabaseServerClient.storage.from("bikes").remove([path]);
+        }
+      }
+    }
+
+    // Update DB
+    const { error } = await supabaseServerClient
+      .from("bikes")
+      .update(updates)
+      .eq("id", id);
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("PATCH error:", err.message);
+    return NextResponse.json(
+      { success: false, message: err.message || "Server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const token = req.headers.get("authorization")?.split(" ")[1];
+  const admin = await verifyAdminToken(token);
+  if (!admin)
+    return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+
+  try {
+    const { id } = await params; // ✅ same fix here
+
+    // Fetch image URL before deleting record
+    const { data: bikeData } = await supabaseServerClient
+      .from("bikes")
+      .select("image_url")
+      .eq("id", id)
+      .single();
+
+    // Delete bike record
+    const { error } = await supabaseServerClient.from("bikes").delete().eq("id", id);
+    if (error) throw error;
+
+    // Delete image file if exists
+    if (bikeData?.image_url) {
+      const path = bikeData.image_url.split("/storage/v1/object/public/bikes/")[1];
+      if (path) {
+        await supabaseServerClient.storage.from("bikes").remove([path]);
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("DELETE error:", err.message);
+    return NextResponse.json(
+      { success: false, message: err.message || "Server error" },
+      { status: 500 }
+    );
+  }
+}
