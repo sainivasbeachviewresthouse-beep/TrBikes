@@ -7,17 +7,8 @@ interface JwtPayload {
   exp?: number;
 }
 
-// ✅ Extend global type definitions (so TypeScript knows these can exist)
-declare global {
-  var JWT_SECRET: string | undefined;
-}
-
-// ✅ Support both Node (process.env) and Cloudflare (globalThis)
-const jwtSecret =
-  process.env.JWT_SECRET || globalThis.JWT_SECRET || "default_secret";
-
-// Convert secret string to Uint8Array (Web Crypto compatible)
-const secret = new TextEncoder().encode(jwtSecret);
+// Convert your secret string to a Uint8Array for Web Crypto
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || "default_secret");
 
 /**
  * Verify JWT token using jose
@@ -32,12 +23,13 @@ export async function verifyAdminToken(token?: string): Promise<JwtPayload | nul
     const p = payload as unknown as Record<string, unknown>;
 
     if (typeof p.id === "string" && typeof p.email === "string") {
-      return {
+      const result: JwtPayload = {
         id: p.id,
         email: p.email,
         iat: typeof p.iat === "number" ? p.iat : undefined,
         exp: typeof p.exp === "number" ? p.exp : undefined,
       };
+      return result;
     }
 
     return null;
