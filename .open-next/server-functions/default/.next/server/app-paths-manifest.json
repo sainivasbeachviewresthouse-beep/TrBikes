@@ -1,0 +1,18 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/admin/bikes/[id]/route": "app/api/admin/bikes/[id]/route.js",
+  "/api/admin/bikes/route": "app/api/admin/bikes/route.js",
+  "/api/admin/login/route": "app/api/admin/login/route.js",
+  "/api/bikes/route": "app/api/bikes/route.js",
+  "/api/pexels-search/route": "app/api/pexels-search/route.js",
+  "/(auth)/admin/login/page": "app/(auth)/admin/login/page.js",
+  "/(admin)/admin/bikes/page": "app/(admin)/admin/bikes/page.js",
+  "/(admin)/admin/page": "app/(admin)/admin/page.js",
+  "/(admin)/admin/profile/page": "app/(admin)/admin/profile/page.js",
+  "/(user)/bikes/[name]/page": "app/(user)/bikes/[name]/page.js",
+  "/(user)/bikes/page": "app/(user)/bikes/page.js",
+  "/(user)/page": "app/(user)/page.js",
+  "/(user)/about/page": "app/(user)/about/page.js",
+  "/(user)/contact/page": "app/(user)/contact/page.js",
+  "/(user)/gallery/page": "app/(user)/gallery/page.js"
+}

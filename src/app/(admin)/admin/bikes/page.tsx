@@ -3,80 +3,78 @@
 import { useEffect, useState, ChangeEvent, FormEvent, useCallback } from "react";
 import { Container, Button, Spinner, Modal, Form, Alert } from "react-bootstrap";
 import { supabaseClient } from "@/lib/supabaseClient";
+import { useBikeStore } from "@/store/useBikeStore";
+import { Bike } from "@/types/bike";
 import BikeCard from "../components/BikeCard";
 import ImageUploader from "../components/ImageUploader";
-import { useBikeStore } from "@/store/useBikeStore";
 
-// Define the shape of the form data
-interface BikeFormData {
-  name: string;
+interface VehicleInputData {
+  title: string;
   registration_no: string;
   category: string;
-  color: string;
-  rent_per_hour: string; // Stored as string in form state for easy input handling
+  paint_color: string;
+  rental_cost_per_hour: string;
   image_url: string;
+  [key: string]: string;
 }
 
-interface Bike {
-  id: string;
-  name: string;
-  registration_no: string;
-  category: string;
-  color: string;
-  rent_per_hour: number;
-  image_url?: string;
-  availability?: boolean;
-}
-
-// Function to reset the form state to its initial empty values
-const initialFormData: BikeFormData = {
-  name: "",
+const startingInputData: VehicleInputData = {
+  title: "",
   registration_no: "",
   category: "",
-  color: "",
-  rent_per_hour: "",
+  paint_color: "",
+  rental_cost_per_hour: "",
   image_url: "",
 };
 
 export default function AdminBikesPage() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [editingBike, setEditingBike] = useState<Bike | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [formData, setFormData] = useState<BikeFormData>(initialFormData);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [issueMessage, setIssueMessage] = useState("");
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [currentVehicleToModify, setCurrentVehicleToModify] = useState<Bike | null>(null);
+  const [uploadCandidateFile, setUploadCandidateFile] = useState<File | null>(null);
+  const [inputData, setInputData] = useState<VehicleInputData>(startingInputData);
+  const [imageError, setImageError] = useState(false); // 🆕 for visual cue if image missing
 
   const { bikes, setBikes, addBike, updateBike, removeBike } = useBikeStore();
-  // Safe way to get localStorage value
-  const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") : "";
+  const authKey = typeof window !== "undefined" ? localStorage.getItem("adminToken") : "";
 
-  /** 🔹 Helper to reset modal state */
-  const resetModal = () => {
-    setShowModal(false);
-    setEditingBike(null);
-    setPendingFile(null);
-    setFormData(initialFormData);
+  /** 🔹 Reset overlay + input state */
+  const clearOverlay = () => {
+    setIsModalVisible(false);
+    setCurrentVehicleToModify(null);
+    setUploadCandidateFile(null);
+    setInputData(startingInputData);
+    setImageError(false);
   };
 
-  /** 🔹 Fetch all bikes initially */
-  // 🌟 FIX: Wrapped in useCallback to make the function stable
-  const fetchBikes = useCallback(async () => {
-    setLoading(true);
+  /** 🔹 Retrieve all bikes */
+  const retrieveVehicles = useCallback(async () => {
+    setIsProcessing(true);
+    setIssueMessage("");
     try {
-      const res = await fetch("/api/bikes");
-      const data = await res.json();
-      if (data.success) setBikes(data.data);
-      else setError(data.message);
+      const outcome = await fetch("/api/bikes");
+      const resultData = await outcome.json();
+      if (resultData.success) setBikes(resultData.data);
+      else setIssueMessage(resultData.message);
     } catch {
-      setError("Failed to fetch bikes");
+      setIssueMessage("Failed to retrieve vehicles");
     } finally {
-      setLoading(false);
+      setIsProcessing(false);
     }
-  }, [setBikes, setError]); // Dependencies required by ESLint
+  }, [setBikes]);
 
-  /** 🔹 Subscribe to Supabase realtime updates */
+  /** 🔹 Real-time Supabase sync */
   useEffect(() => {
-    fetchBikes();
+    const loadAllVehicles = async () => {
+      try {
+        await retrieveVehicles();
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    loadAllVehicles();
 
     const channel = supabaseClient
       .channel("bikes-changes")
@@ -94,126 +92,143 @@ export default function AdminBikesPage() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-    // 🌟 FIX: Added all missing dependencies
-  }, [fetchBikes, addBike, updateBike, removeBike]);
+  }, [retrieveVehicles, addBike, updateBike, removeBike]);
 
-  
-  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+  /** 🔹 Input handler */
+  const handleInputAlteration = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prevData) => ({ ...prevData, [name]: value }));
+    setInputData((prev) => ({ ...prev, [name]: value }));
   };
 
-  /** 🔹 Handle image from ImageUploader */
-  const handleImageChange = (data: File | string | null) => {
+  /** 🔹 Image from uploader */
+  const handleImageAlteration = (data: File | string | null) => {
+    setImageError(false); // Clear visual cue if user picks something
     if (data instanceof File) {
-      setPendingFile(data);
-      setFormData((p) => ({ ...p, image_url: "" }));
+      setUploadCandidateFile(data);
+      setInputData((p) => ({ ...p, image_url: "" }));
     } else if (typeof data === "string") {
-      setPendingFile(null);
-      setFormData((p) => ({ ...p, image_url: data }));
+      setUploadCandidateFile(null);
+      setInputData((p) => ({ ...p, image_url: data }));
     } else {
-      setPendingFile(null);
-      setFormData((p) => ({ ...p, image_url: "" }));
+      setUploadCandidateFile(null);
+      setInputData((p) => ({ ...p, image_url: "" }));
     }
   };
 
-  /** 🔹 Add / Update Bike */
-  const handleSubmit = async (e: FormEvent) => {
+  /** 🔹 Submit (Add or Update) */
+  const handleFormSubmission = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(""); // Clear previous errors
+    setIsProcessing(true);
+    setIssueMessage("");
 
-    const apiFormData = new FormData();
-    apiFormData.append("name", formData.name);
-    apiFormData.append("registration_no", formData.registration_no);
-    apiFormData.append("category", formData.category);
-    apiFormData.append("color", formData.color);
-    apiFormData.append("rent_per_hour", formData.rent_per_hour);
+    // ✅ Require image when creating a new vehicle
+    if (!currentVehicleToModify && !uploadCandidateFile && !inputData.image_url) {
+      setIssueMessage("Please select or upload an image for this vehicle.");
+      setImageError(true);
+      setIsProcessing(false);
+      return;
+    }
 
-    if (pendingFile) apiFormData.append("image_file", pendingFile);
-    else if (formData.image_url) apiFormData.append("image_url", formData.image_url);
+    const apiTransmissionData = new FormData();
+    Object.entries(inputData).forEach(([key, val]) => {
+      let finalKey = key;
+      if (key === "title") finalKey = "name";
+      else if (key === "paint_color") finalKey = "color";
+      else if (key === "rental_cost_per_hour") finalKey = "rent_per_hour";
 
-    const url = editingBike ? `/api/admin/bikes/${editingBike.id}` : "/api/admin/bikes";
-    const method = editingBike ? "PATCH" : "POST";
+      if (finalKey !== "image_url" || val) apiTransmissionData.append(finalKey, val);
+    });
+
+    if (uploadCandidateFile) apiTransmissionData.append("image_file", uploadCandidateFile);
+
+    const targetUrl = currentVehicleToModify
+      ? `/api/admin/bikes/${currentVehicleToModify.id}`
+      : "/api/admin/bikes";
+    const requestMethod = currentVehicleToModify ? "PATCH" : "POST";
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}` },
-        body: apiFormData,
+      const outcome = await fetch(targetUrl, {
+        method: requestMethod,
+        headers: { Authorization: `Bearer ${authKey}` },
+        body: apiTransmissionData,
       });
-      const data = await res.json();
-      if (!data.success) {
-        setError(data.message);
-      } else {
-        resetModal(); // Reset on successful submission
-      }
+      const resultData = await outcome.json();
+      if (!resultData.success) setIssueMessage(resultData.message);
+      else clearOverlay();
     } catch {
-      setError("Failed to save bike");
+      setIssueMessage("Failed to store vehicle data");
     } finally {
-      setLoading(false);
+      setIsProcessing(false);
     }
   };
 
-  /** 🔹 Delete bike */
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this bike?")) return;
+  /** 🔹 Remove vehicle */
+  const handleRemoval = async (id: string) => {
+    if (!confirm("Are you sure you want to remove this vehicle?")) return;
     try {
-      const res = await fetch(`/api/admin/bikes/${id}`, {
+      const outcome = await fetch(`/api/admin/bikes/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${authKey}` },
       });
-      const data = await res.json();
-      if (!data.success) setError(data.message);
+      const resultData = await outcome.json();
+      if (!resultData.success) setIssueMessage(resultData.message);
     } catch {
-      setError("Failed to delete bike");
+      setIssueMessage("Failed to remove vehicle");
     }
   };
 
-  /** 🔹 Edit bike */
-  const handleEdit = (bike: Bike) => {
-    setEditingBike(bike);
-    setFormData({
-      name: bike.name,
+  /** 🔹 Edit vehicle */
+  const handleModification = (bike: Bike) => {
+    setCurrentVehicleToModify(bike);
+    setInputData({
+      title: bike.name,
       registration_no: bike.registration_no,
       category: bike.category,
-      color: bike.color,
-      rent_per_hour: bike.rent_per_hour.toString(),
+      paint_color: bike.color,
+      rental_cost_per_hour: bike.rent_per_hour.toString(),
       image_url: bike.image_url || "",
     });
-    setShowModal(true);
+    setIsModalVisible(true);
+    setImageError(false);
   };
 
   /** 🔹 Toggle availability */
-  const handleToggleActive = async (id: string, newStatus: boolean) => {
+  const handleToggleOperationalStatus = async (id: string, newStatus: boolean) => {
     try {
-      const res = await fetch(`/api/admin/bikes/${id}`, {
+      const outcome = await fetch(`/api/admin/bikes/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authKey}`,
+        },
         body: JSON.stringify({ availability: newStatus }),
       });
-      const data = await res.json();
-      if (!data.success) setError(data.message);
+      const resultData = await outcome.json();
+      if (!resultData.success) setIssueMessage(resultData.message);
     } catch {
-      setError("Failed to update status");
+      setIssueMessage("Failed to update operational status");
     }
   };
 
   return (
     <Container className="py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="mb-0">Manage Bikes</h2>
-        {/* Pass initial state to Add New Bike button */}
-        <Button onClick={() => {
-          setEditingBike(null); 
-          setFormData(initialFormData); 
-          setShowModal(true);
-        }}>Add New Bike</Button>
+        <h2 className="mb-0">Control Vehicles</h2>
+        <Button
+          onClick={() => {
+            setCurrentVehicleToModify(null);
+            setInputData(startingInputData);
+            setIsModalVisible(true);
+            setImageError(false);
+          }}
+        >
+          Insert New Vehicle
+        </Button>
       </div>
 
-      {error && <Alert variant="danger">{error}</Alert>}
+      {issueMessage && <Alert variant="danger">{issueMessage}</Alert>}
 
-      {loading && bikes.length === 0 ? (
+      {isProcessing && bikes.length === 0 ? (
         <div className="text-center my-5">
           <Spinner animation="border" />
         </div>
@@ -223,40 +238,77 @@ export default function AdminBikesPage() {
             <div key={bike.id} className="col-12 col-sm-6 col-md-4 col-lg-3">
               <BikeCard
                 bike={bike}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onToggleActive={handleToggleActive}
+                onEdit={handleModification}
+                onDelete={handleRemoval}
+                onToggleActive={handleToggleOperationalStatus}
               />
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-muted text-center mt-4">No bikes found.</p>
+        <p className="text-muted text-center mt-4">No vehicles found.</p>
       )}
 
-      {/* Add/Edit Modal */}
-      <Modal
-        show={showModal}
-        onHide={resetModal} // Use the new reset helper
-        centered
-      >
+      {/* 🔹 Insert/Modify Overlay */}
+      <Modal show={isModalVisible} onHide={clearOverlay} centered>
         <Modal.Header closeButton>
-          <Modal.Title>{editingBike ? "Edit Bike" : "Add New Bike"}</Modal.Title>
+          <Modal.Title>
+            {currentVehicleToModify ? "Modify Vehicle" : "Insert New Vehicle"}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form onSubmit={handleSubmit}>
-            <Form.Group className="mb-2"><Form.Label>Name</Form.Label><Form.Control name="name" value={formData.name} onChange={handleChange} required /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Registration No</Form.Label><Form.Control name="registration_no" value={formData.registration_no} onChange={handleChange} required /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Category</Form.Label><Form.Control name="category" value={formData.category} onChange={handleChange} required /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Color</Form.Label><Form.Control name="color" value={formData.color} onChange={handleChange} /></Form.Group>
-            {/* Note: rent_per_hour is type="number" in the control but handled by handleChange */}
-            <Form.Group className="mb-2"><Form.Label>Rent per Hour</Form.Label><Form.Control type="number" name="rent_per_hour" value={formData.rent_per_hour} onChange={handleChange} required /></Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Bike Image</Form.Label>
-              <ImageUploader value={formData.image_url} onChange={handleImageChange} />
+          <Form onSubmit={handleFormSubmission}>
+            {["title", "registration_no", "category", "paint_color"].map((field) => (
+              <Form.Group className="mb-2" key={field}>
+                <Form.Label>
+                  {field.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                </Form.Label>
+                <Form.Control
+                  name={field}
+                  value={inputData[field]}
+                  onChange={handleInputAlteration}
+                  required={field !== "paint_color"}
+                />
+              </Form.Group>
+            ))}
+            <Form.Group className="mb-2">
+              <Form.Label>Rental Cost per Hour</Form.Label>
+              <Form.Control
+                type="number"
+                name="rental_cost_per_hour"
+                value={inputData.rental_cost_per_hour}
+                onChange={handleInputAlteration}
+                required
+              />
             </Form.Group>
-            <Button type="submit" className="mt-3 w-100" disabled={loading}>
-              {loading ? <Spinner animation="border" size="sm" /> : editingBike ? "Update Bike" : "Add Bike"}
+
+            {/* 🆕 Image Uploader with required visual cue */}
+            <Form.Group className="mb-3">
+              <Form.Label>
+                Vehicle Picture <span className="text-danger">*</span>
+              </Form.Label>
+              <div
+                style={{
+                  border: imageError ? "2px solid red" : "none",
+                  borderRadius: "8px",
+                  padding: imageError ? "4px" : "0",
+                }}
+              >
+                <ImageUploader value={inputData.image_url} onChange={handleImageAlteration} />
+              </div>
+              {imageError && (
+                <small className="text-danger">Image is required for new vehicles.</small>
+              )}
+            </Form.Group>
+
+            <Button type="submit" className="mt-3 w-100" disabled={isProcessing}>
+              {isProcessing ? (
+                <Spinner animation="border" size="sm" />
+              ) : currentVehicleToModify ? (
+                "Update Vehicle"
+              ) : (
+                "Insert Vehicle"
+              )}
             </Button>
           </Form>
         </Modal.Body>
